@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NotebookLM Summarizer</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- Header -->
+  <header id="header">
+    <h1>📓 NLM Summarizer</h1>
+    <button id="settingsToggle" title="Settings">⚙️</button>
+  </header>
+
+  <!-- Settings (collapsed by default) -->
+  <section id="settings" class="hidden">
+    <label for="notebookUrl">NotebookLM Notebook URL:</label>
+    <input type="url" id="notebookUrl" placeholder="https://notebook.google.com/notebook/...">
+    <button id="saveSettings">Save</button>
+    <p id="settingsStatus" class="status-msg"></p>
+  </section>
+
+  <!-- Main Content Area -->
+  <main>
+    <!-- State: Not on YouTube -->
+    <section id="notYoutube" class="state-section hidden">
+      <div class="empty-state">
+        <span class="emoji">🎬</span>
+        <p>Navigate to a YouTube video to get started.</p>
+      </div>
+    </section>
+
+    <!-- State: Ready to summarize -->
+    <section id="ready" class="state-section hidden">
+      <div class="video-info">
+        <h3 id="videoTitle">Video Title</h3>
+        <p id="videoUrl" class="url-display"></p>
+      </div>
+      <button id="summarizeBtn" class="primary-btn">▶ Summarize this video</button>
+    </section>
+
+    <!-- State: Working (loading) -->
+    <section id="working" class="state-section hidden">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p id="statusMessage">Initializing...</p>
+      </div>
+      <div id="progressSteps" class="progress-steps">
+        <div class="step" data-step="open">Opening NotebookLM...</div>
+        <div class="step" data-step="add">Adding YouTube source...</div>
+        <div class="step" data-step="ask">Asking for summary...</div>
+        <div class="step" data-step="wait">Waiting for response...</div>
+        <div class="step" data-step="limits">Checking limitations...</div>
+        <div class="step" data-step="done">Done!</div>
+      </div>
+    </section>
+
+    <!-- State: Results -->
+    <section id="results" class="state-section hidden">
+      <div class="result-block">
+        <h3>📝 Summary</h3>
+        <div id="summaryContent" class="content-area"></div>
+      </div>
+
+      <div id="limitationsBlock" class="result-block hidden">
+        <h3>⚠️ Limitations</h3>
+        <div id="limitationsContent" class="content-area"></div>
+      </div>
+
+      <hr>
+
+      <!-- Follow-up questions -->
+      <div class="follow-up">
+        <h3>💬 Ask a follow-up</h3>
+        <div class="input-row">
+          <textarea id="followUpInput" placeholder="Ask something about this video..." rows="2"></textarea>
+          <button id="followUpBtn" class="send-btn" title="Send">➤</button>
+        </div>
+      </div>
+
+      <!-- Follow-up responses -->
+      <div id="followUpResults"></div>
+
+      <div class="action-bar">
+        <button id="doneBtn" class="secondary-btn">✓ Done (clean up)</button>
+        <button id="copyBtn" class="secondary-btn">📋 Copy</button>
+      </div>
+    </section>
+
+    <!-- State: Error -->
+    <section id="error" class="state-section hidden">
+      <div class="error-state">
+        <span class="emoji">❌</span>
+        <p id="errorMessage">Something went wrong.</p>
+        <button id="retryBtn" class="secondary-btn">Retry</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

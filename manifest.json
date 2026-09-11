@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "NotebookLM YouTube Summarizer",
+  "version": "0.1.0",
+  "description": "Summarize YouTube videos using Google NotebookLM without leaving YouTube.",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "tabs",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://notebooklm.google.com/*",
+    "https://notebook.google.com/*",
+    "https://www.youtube.com/*",
+    "https://youtube.com/*"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://notebooklm.google.com/*",
+        "https://notebook.google.com/*"
+      ],
+      "js": [
+        "content/notebooklm-controller.js"
+      ],
+      "all_frames": false,
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "NotebookLM YouTube Summarizer"
+  }
+}
