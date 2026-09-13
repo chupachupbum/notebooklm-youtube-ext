@@ -1,11 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NotebookLM Summarizer</title>
   <link rel="stylesheet" href="sidepanel.css">
+  <link rel="stylesheet" href="onboarding.css">
 </head>
+
 <body>
   <!-- Header -->
   <header id="header">
@@ -19,6 +22,7 @@
     <input type="url" id="notebookUrl" placeholder="https://notebook.google.com/notebook/...">
     <button id="saveSettings">Save</button>
     <p id="settingsStatus" class="status-msg"></p>
+    <button id="replayTutorialBtn" class="settings-tutorial-btn">📖 Show Tutorial</button>
   </section>
 
   <!-- Main Content Area -->
@@ -64,7 +68,7 @@
       </div>
 
       <div id="limitationsBlock" class="result-block hidden">
-        <h3>⚠️ Limitations</h3>
+        <h3>⚠️ Limitations of the summary</h3>
         <div id="limitationsContent" class="content-area"></div>
       </div>
 
@@ -98,6 +102,9 @@
     </section>
   </main>
 
+  <script src="../lib/markdown.js"></script>
+  <script src="onboarding.js"></script>
   <script src="sidepanel.js"></script>
 </body>
+
 </html>

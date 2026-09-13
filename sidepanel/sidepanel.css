@@ -328,43 +328,181 @@ button {
 /* Results Area */
 .result-block {
   background-color: var(--bg-color-light);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 16px;
   border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .result-block h3 {
-  font-size: 14px;
-  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 14px;
   color: var(--accent-color);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.content-area {
-  font-size: 14px;
+#limitationsBlock {
+  border-color: rgba(230, 126, 34, 0.25);
+  background: rgba(230, 126, 34, 0.05);
+}
+
+.content-area, .q-and-a .a {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: #dcdce8;
+}
+
+/* NotebookLM-inspired Headings */
+.nlm-heading {
+  font-family: inherit;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #ffffff;
+}
+
+.content-area .nlm-h1, .q-and-a .nlm-h1 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-top: 18px;
+  margin-bottom: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.content-area .nlm-h2, .q-and-a .nlm-h2 {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #ffbe76;
+  margin-top: 16px;
+  margin-bottom: 8px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid rgba(255, 190, 118, 0.15);
+}
+
+.content-area .nlm-h3, .q-and-a .nlm-h3 {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f1f2f6;
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.content-area .nlm-h4, .q-and-a .nlm-h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.content-area .nlm-heading:first-child,
+.q-and-a .nlm-heading:first-child {
+  margin-top: 0;
+}
+
+/* NotebookLM-inspired Paragraphs */
+.nlm-paragraph {
+  margin-bottom: 10px;
   line-height: 1.6;
 }
 
-.content-area p {
-  margin-bottom: 12px;
-}
-
-.content-area p:last-child {
+.nlm-paragraph:last-child {
   margin-bottom: 0;
 }
 
-.content-area ul, .content-area ol {
-  margin-left: 20px;
-  margin-bottom: 12px;
+/* NotebookLM-inspired Lists */
+.nlm-list {
+  margin: 8px 0 12px 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.nlm-list-item {
+  position: relative;
+  padding-left: 18px;
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.nlm-list-item:last-child {
+  margin-bottom: 0;
+}
+
+/* Styled Bullet marker for UL */
+.nlm-ul .nlm-list-item::before {
+  content: "•";
+  position: absolute;
+  left: 3px;
+  top: -1px;
+  color: var(--accent-color);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* Styled Counter for OL */
+.nlm-ol {
+  counter-reset: nlm-item-counter;
+}
+
+.nlm-ol .nlm-list-item {
+  counter-increment: nlm-item-counter;
+  padding-left: 22px;
+}
+
+.nlm-ol .nlm-list-item::before {
+  content: counter(nlm-item-counter) ".";
+  position: absolute;
+  left: 2px;
+  top: 0;
+  color: var(--accent-color);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* Bold Lead-ins highlight */
+.nlm-list-item strong,
+.nlm-paragraph strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* Inline code & blockquotes */
+.nlm-inline-code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: Consolas, Monaco, "Courier New", monospace;
+  font-size: 12px;
+  color: #e67e22;
+}
+
+.nlm-blockquote {
+  border-left: 3px solid var(--accent-color);
+  background: rgba(230, 126, 34, 0.08);
+  padding: 8px 12px;
+  margin: 10px 0;
+  border-radius: 0 6px 6px 0;
+  font-style: italic;
+  color: #c0c0d0;
+}
+
+.nlm-divider {
+  border: 0;
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 14px 0;
 }
 
 hr {
   border: 0;
   height: 1px;
   background-color: var(--border-color);
-  margin: 8px 0;
+  margin: 16px 0;
 }
 
 /* Follow Up */
@@ -445,14 +583,8 @@ textarea:focus {
 }
 
 .q-and-a .a {
-  color: var(--text-color);
-  line-height: 1.5;
-}
-
-.q-and-a .a::before {
-  content: 'A: ';
-  color: var(--accent-color);
-  font-weight: 500;
+  color: #dcdce8;
+  line-height: 1.6;
 }
 
 /* Action Bar */

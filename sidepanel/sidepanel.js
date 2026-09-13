@@ -1,3 +1,43 @@
+// Chrome API mock shim for standalone browser testing & debugging
+if (typeof window.chrome === 'undefined' || !window.chrome.storage || !window.chrome.storage.local) {
+  const mockStorage = {
+    notebookUrl: 'https://notebook.google.com/notebook/fff86f43-6140-40db-99c4-5730e6ccb04f'
+  };
+  window.chrome = window.chrome || {};
+  window.chrome.storage = {
+    local: {
+      get: (keys, cb) => {
+        const res = {};
+        if (typeof keys === 'string') {
+          res[keys] = mockStorage[keys];
+        } else if (Array.isArray(keys)) {
+          keys.forEach(k => res[k] = mockStorage[k]);
+        } else if (typeof keys === 'object') {
+          Object.keys(keys).forEach(k => {
+            res[k] = mockStorage[k] !== undefined ? mockStorage[k] : keys[k];
+          });
+        }
+        if (cb) cb(res);
+        return Promise.resolve(res);
+      },
+      set: (items, cb) => {
+        Object.assign(mockStorage, items);
+        if (cb) cb();
+        return Promise.resolve();
+      }
+    }
+  };
+  window.chrome.runtime = window.chrome.runtime || {
+    sendMessage: () => Promise.resolve({ received: true }),
+    onMessage: { addListener: () => {} }
+  };
+  window.chrome.tabs = window.chrome.tabs || {
+    query: () => Promise.resolve([{ id: 1, url: 'https://www.youtube.com/watch?v=mockVideo', title: 'Demo YouTube Video' }]),
+    onActivated: { addListener: () => {} },
+    onUpdated: { addListener: () => {} }
+  };
+}
+
 // State Management
 const states = ['notYoutube', 'ready', 'working', 'results', 'error'];
 let currentState = 'ready';
@@ -19,8 +59,59 @@ function showState(stateId) {
 // Global Variables
 let currentVideoUrl = '';
 let currentVideoTitle = '';
+let currentVideoId = null;
+let currentTabId = null;
 let fullSummaryText = '';
+let currentRawSummary = '';
+let currentRawLimitations = '';
+let followUpHistory = [];
 const DEFAULT_NOTEBOOK_URL = 'https://notebook.google.com/notebook/fff86f43-6140-40db-99c4-5730e6ccb04f';
+
+// Helper to extract YouTube video ID
+function extractYouTubeVideoId(url) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./, '');
+    
+    if (hostname === 'youtube.com' || hostname === 'm.youtube.com') {
+      if (parsed.pathname === '/watch') {
+        return parsed.searchParams.get('v') || null;
+      }
+      if (parsed.pathname.startsWith('/shorts/')) {
+        return parsed.pathname.split('/')[2] || null;
+      }
+      if (parsed.pathname.startsWith('/live/')) {
+        return parsed.pathname.split('/')[2] || null;
+      }
+    } else if (hostname === 'youtu.be') {
+      return parsed.pathname.slice(1).split('?')[0] || null;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function resetSummaryUI() {
+  fullSummaryText = '';
+  currentRawSummary = '';
+  currentRawLimitations = '';
+  followUpHistory = [];
+  const summaryEl = document.getElementById('summaryContent');
+  if (summaryEl) summaryEl.innerHTML = '';
+  const limitsEl = document.getElementById('limitationsContent');
+  if (limitsEl) limitsEl.innerHTML = '';
+  const followUpEl = document.getElementById('followUpResults');
+  if (followUpEl) followUpEl.innerHTML = '';
+  const limitsBlock = document.getElementById('limitationsBlock');
+  if (limitsBlock) limitsBlock.classList.add('hidden');
+  const followUpInput = document.getElementById('followUpInput');
+  if (followUpInput) {
+    followUpInput.value = '';
+    followUpInput.disabled = false;
+  }
+  const followUpBtn = document.getElementById('followUpBtn');
+  if (followUpBtn) followUpBtn.disabled = false;
+}
 
 // Setup settings logic
 function loadSettings() {
@@ -45,37 +136,52 @@ async function checkCurrentTab() {
     const urlParams = new URLSearchParams(window.location.search);
     const paramUrl = urlParams.get('url');
     const paramTitle = urlParams.get('title');
-    if (paramUrl && paramUrl.includes('youtube.com/watch')) {
-      const isDiff = currentVideoUrl !== paramUrl;
-      currentVideoUrl = paramUrl;
-      currentVideoTitle = paramTitle || 'YouTube Video';
-      document.getElementById('videoTitle').textContent = currentVideoTitle;
-      document.getElementById('videoUrl').textContent = currentVideoUrl;
-      if (isDiff || (currentState !== 'working' && currentState !== 'results')) {
-        showState('ready');
+    const paramTabId = urlParams.get('tabId');
+    if (paramTabId) currentTabId = parseInt(paramTabId, 10);
+
+    if (paramUrl) {
+      const vid = extractYouTubeVideoId(paramUrl);
+      if (vid) {
+        const isDiff = currentVideoId !== vid;
+        if (isDiff && (currentState === 'results' || currentState === 'working')) {
+          resetSummaryUI();
+        }
+        currentVideoId = vid;
+        currentVideoUrl = paramUrl;
+        currentVideoTitle = paramTitle || 'YouTube Video';
+        document.getElementById('videoTitle').textContent = currentVideoTitle;
+        document.getElementById('videoUrl').textContent = currentVideoUrl;
+        if (isDiff || (currentState !== 'working' && currentState !== 'results')) {
+          showState('ready');
+        }
+        return;
       }
-      return;
     }
 
     // 2. Query the active tab in current window or last focused window
     let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
-    // If running in a separate popup window or current tab is not youtube, inspect last focused window
-    if (!tab || !tab.url || !tab.url.includes('youtube.com/watch')) {
+    // If running in a separate popup window or standalone tab where current tab is the extension page itself
+    if (!tab || tab.url?.startsWith('chrome-extension://')) {
       const [lastFocusedTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      if (lastFocusedTab && lastFocusedTab.url && lastFocusedTab.url.includes('youtube.com/watch')) {
+      if (lastFocusedTab && !lastFocusedTab.url?.startsWith('chrome-extension://')) {
         tab = lastFocusedTab;
       } else {
-        // Search across any window for an active YouTube video
         const ytTabs = await chrome.tabs.query({ url: '*://*.youtube.com/watch*' });
-        if (ytTabs.length > 0) {
-          tab = ytTabs.find(t => t.active) || ytTabs[0];
-        }
+        if (ytTabs.length > 0) tab = ytTabs.find(t => t.active) || ytTabs[0];
       }
     }
 
-    if (tab && tab.url && tab.url.includes('youtube.com/watch')) {
-      const isDiff = currentVideoUrl !== tab.url;
+    const detectedVideoId = extractYouTubeVideoId(tab?.url);
+
+    if (tab && detectedVideoId) {
+      const isDiff = currentVideoId !== detectedVideoId;
+      if (isDiff && (currentState === 'results' || currentState === 'working')) {
+        resetSummaryUI();
+      }
+
+      currentTabId = tab.id;
+      currentVideoId = detectedVideoId;
       currentVideoUrl = tab.url;
       currentVideoTitle = tab.title || 'YouTube Video';
       
@@ -87,9 +193,15 @@ async function checkCurrentTab() {
         showState('ready');
       }
     } else {
-      if (currentState !== 'working' && currentState !== 'results') {
-        showState('notYoutube');
+      // Not on a YouTube video (e.g. YouTube homepage, channel, or external site)
+      if (currentState === 'results' || currentState === 'working') {
+        resetSummaryUI();
       }
+      currentVideoId = null;
+      currentVideoUrl = '';
+      currentVideoTitle = '';
+      currentTabId = tab?.id || null;
+      showState('notYoutube');
     }
   } catch (err) {
     console.error("Failed to query tabs:", err);
@@ -149,11 +261,26 @@ function attachEventListeners() {
 
   document.getElementById('saveSettings').addEventListener('click', saveSettings);
 
+  // Replay tutorial button
+  const replayBtn = document.getElementById('replayTutorialBtn');
+  if (replayBtn) {
+    replayBtn.addEventListener('click', () => {
+      const settingsPanel = document.getElementById('settings');
+      if (settingsPanel) settingsPanel.classList.add('hidden');
+      if (window.NLM_Onboarding && typeof window.NLM_Onboarding.start === 'function') {
+        window.NLM_Onboarding.start();
+      }
+    });
+  }
+
   // Summarize button
   document.getElementById('summarizeBtn').addEventListener('click', () => {
     showState('working');
     updateProgress('open');
     fullSummaryText = ''; // reset
+    currentRawSummary = '';
+    currentRawLimitations = '';
+    followUpHistory = [];
     document.getElementById('summaryContent').innerHTML = '';
     document.getElementById('limitationsContent').innerHTML = '';
     document.getElementById('followUpResults').innerHTML = '';
@@ -162,7 +289,8 @@ function attachEventListeners() {
     chrome.runtime.sendMessage({ 
       action: 'summarize', 
       videoUrl: currentVideoUrl, 
-      videoTitle: currentVideoTitle 
+      videoTitle: currentVideoTitle,
+      tabId: currentTabId
     }).catch(err => {
       showState('error');
       document.getElementById('errorMessage').textContent = "Failed to start summarization. Ensure background script is running.";
@@ -179,6 +307,7 @@ function attachEventListeners() {
     const resultsContainer = document.getElementById('followUpResults');
     const pendingDiv = document.createElement('div');
     pendingDiv.className = 'q-and-a pending';
+    pendingDiv.dataset.question = question;
     pendingDiv.innerHTML = `
       <div class="q">${escapeHtml(question)}</div>
       <div class="a">Thinking... <span class="spinner" style="display:inline-block; width:12px; height:12px; border-width:2px; margin:0 0 -2px 4px;"></span></div>
@@ -219,24 +348,45 @@ function attachEventListeners() {
     }
   });
 
-  // Copy button
+  // Copy button - Copies clean, beautifully formatted Markdown
   document.getElementById('copyBtn').addEventListener('click', () => {
-    let textToCopy = "Summary:\n" + document.getElementById('summaryContent').innerText;
-    const limits = document.getElementById('limitationsContent').innerText;
-    if (limits) {
-      textToCopy += "\n\nLimitations:\n" + limits;
+    const strip = (t) => (window.NLM_Markdown ? window.NLM_Markdown.stripCitations(t) : t).trim();
+
+    let textToCopy = '';
+    if (currentVideoTitle) {
+      textToCopy += `# ${currentVideoTitle}\n\n`;
     }
-    const followUps = document.querySelectorAll('.q-and-a:not(.pending)');
-    if (followUps.length > 0) {
-      textToCopy += "\n\nFollow-ups:\n";
-      followUps.forEach(qa => {
-        textToCopy += "Q: " + qa.querySelector('.q').innerText + "\n";
-        textToCopy += "A: " + qa.querySelector('.a').innerText + "\n\n";
+    if (currentVideoUrl) {
+      textToCopy += `Source: ${currentVideoUrl}\n\n`;
+    }
+
+    if (currentRawSummary) {
+      textToCopy += `## Summary\n\n${strip(currentRawSummary)}\n\n`;
+    } else {
+      const summaryEl = document.getElementById('summaryContent');
+      if (summaryEl && summaryEl.innerText) {
+        textToCopy += `## Summary\n\n${summaryEl.innerText}\n\n`;
+      }
+    }
+
+    if (currentRawLimitations) {
+      textToCopy += `## Limitations\n\n${strip(currentRawLimitations)}\n\n`;
+    }
+
+    if (followUpHistory.length > 0) {
+      textToCopy += `## Follow-up Q&A\n\n`;
+      followUpHistory.forEach(qa => {
+        textToCopy += `### Q: ${qa.question}\n\n${strip(qa.answer)}\n\n`;
       });
     }
+
+    if (!textToCopy) {
+      showToast('Nothing to copy yet');
+      return;
+    }
     
-    navigator.clipboard.writeText(textToCopy).then(() => {
-      showToast('Copied to clipboard!');
+    navigator.clipboard.writeText(textToCopy.trim()).then(() => {
+      showToast('Copied Markdown to clipboard!');
     }).catch(err => {
       console.error("Failed to copy", err);
       showToast('Failed to copy');
@@ -258,6 +408,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     updateProgress(message.step);
   } else if (message.action === 'summary') {
     showState('results');
+    currentRawSummary = message.summary || '';
+    currentRawLimitations = message.limitations || '';
     
     document.getElementById('summaryContent').innerHTML = formatText(message.summary);
     if (message.limitations) {
@@ -272,6 +424,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === 'followUpAnswer') {
     const resultsContainer = document.getElementById('followUpResults');
     const pendingDiv = resultsContainer.querySelector('.pending');
+    const questionText = (pendingDiv && pendingDiv.dataset.question) || message.question || 'Follow-up';
+
+    followUpHistory.push({
+      question: questionText,
+      answer: message.answer || ''
+    });
     
     if (pendingDiv) {
       pendingDiv.classList.remove('pending');
@@ -281,7 +439,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const div = document.createElement('div');
       div.className = 'q-and-a';
       div.innerHTML = `
-        <div class="q">Follow-up</div>
+        <div class="q">${escapeHtml(questionText)}</div>
         <div class="a">${formatText(message.answer)}</div>
       `;
       resultsContainer.appendChild(div);
@@ -293,7 +451,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     input.focus();
   } else if (message.action === 'cleanedUp') {
     showToast('Cleaned up source!');
+    resetSummaryUI();
     showState('ready');
+  } else if (message.action === 'sessionCleanedUp') {
+    resetSummaryUI();
+    checkCurrentTab();
   } else if (message.action === 'cleanupError') {
     showToast('Cleanup error: ' + message.error);
   }
@@ -308,13 +470,13 @@ function escapeHtml(text) {
 
 function formatText(text) {
   if (!text) return '';
-  // Simple markdown-like formatting for basic readability
+  if (window.NLM_Markdown && typeof window.NLM_Markdown.renderMarkdown === 'function') {
+    return window.NLM_Markdown.renderMarkdown(text);
+  }
+  // Fallback if markdown parser is unavailable
   let html = escapeHtml(text);
-  // Convert double newlines to paragraphs
-  html = html.split(/\n\s*\n/).map(p => `<p>${p}</p>`).join('');
-  // Convert single newlines to br
+  html = html.split(/\n\s*\n/).map(p => `<p class="nlm-paragraph">${p}</p>`).join('');
   html = html.replace(/\n/g, '<br>');
-  // Convert **bold**
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   return html;
 }
@@ -322,13 +484,30 @@ function formatText(text) {
 // Track tab changes to update state
 chrome.tabs.onActivated.addListener(checkCurrentTab);
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete') {
+  if (changeInfo.url || changeInfo.status === 'complete') {
     checkCurrentTab();
   }
 });
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === currentTabId) {
+    currentTabId = null;
+    currentVideoId = null;
+    currentVideoUrl = '';
+    currentVideoTitle = '';
+    resetSummaryUI();
+    showState('notYoutube');
+  }
+});
+
+// Expose helpers globally for onboarding module
+window.checkCurrentTab = checkCurrentTab;
+window.showToast = showToast;
 
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   attachEventListeners();
   checkCurrentTab();
+  if (window.NLM_Onboarding && typeof window.NLM_Onboarding.init === 'function') {
+    window.NLM_Onboarding.init();
+  }
 });

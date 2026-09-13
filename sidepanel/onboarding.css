@@ -1,0 +1,397 @@
+/* Onboarding System Styles */
+
+/* Dimmed backdrop overlay */
+.onboarding-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(10, 10, 20, 0.75);
+  backdrop-filter: blur(2px);
+  z-index: 999;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: auto;
+}
+
+.onboarding-overlay.active {
+  opacity: 1;
+}
+
+/* Modal Card (Steps 1, 2, 3) */
+.onboarding-modal-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1002;
+  pointer-events: none;
+}
+
+.onboarding-modal {
+  background-color: var(--bg-color-light, #252542);
+  border: 1px solid rgba(230, 126, 34, 0.35);
+  border-radius: 12px;
+  padding: 24px 20px;
+  width: 100%;
+  max-width: 340px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  text-align: center;
+  pointer-events: auto;
+  animation: modalFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.onboarding-icon {
+  font-size: 38px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.onboarding-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.onboarding-body {
+  font-size: 13.5px;
+  color: var(--text-color, #e0e0e0);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.onboarding-hint {
+  font-size: 12px;
+  color: var(--text-muted, #a0a0b0);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  padding: 8px 10px;
+  text-align: left;
+  line-height: 1.4;
+  border-left: 3px solid var(--accent-color, #e67e22);
+}
+
+/* Input field inside modal (Step 3) */
+.onboarding-input-group {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.onboarding-input-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #a0a0b0);
+}
+
+.onboarding-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background-color: var(--bg-color, #1a1a2e);
+  color: var(--text-color, #e0e0e0);
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.onboarding-input:focus {
+  border-color: var(--accent-color, #e67e22);
+  box-shadow: 0 0 0 2px rgba(230, 126, 34, 0.25);
+}
+
+.onboarding-input.input-error {
+  border-color: var(--error-color, #e74c3c);
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.2);
+}
+
+.onboarding-error-msg {
+  font-size: 12px;
+  color: var(--error-color, #e74c3c);
+  margin-top: 2px;
+  display: none;
+  text-align: left;
+}
+
+.onboarding-error-msg.visible {
+  display: block;
+}
+
+/* Tooltip Coach Mark (Steps 4, 5) */
+.onboarding-tooltip {
+  position: absolute;
+  z-index: 1002;
+  background-color: #272745;
+  border: 1px solid rgba(230, 126, 34, 0.45);
+  border-radius: 10px;
+  padding: 16px;
+  width: 280px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: auto;
+  animation: tooltipFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.onboarding-tooltip-arrow {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background-color: #272745;
+  border: 1px solid rgba(230, 126, 34, 0.45);
+  transform: rotate(45deg);
+  z-index: -1;
+}
+
+/* Arrow placements */
+.onboarding-tooltip[data-placement="top"] .onboarding-tooltip-arrow {
+  bottom: -6px;
+  border-top: none;
+  border-left: none;
+}
+
+.onboarding-tooltip[data-placement="bottom"] .onboarding-tooltip-arrow {
+  top: -6px;
+  border-bottom: none;
+  border-right: none;
+}
+
+.onboarding-tooltip[data-placement="left"] .onboarding-tooltip-arrow {
+  right: -6px;
+  border-left: none;
+  border-bottom: none;
+}
+
+.onboarding-tooltip[data-placement="right"] .onboarding-tooltip-arrow {
+  left: -6px;
+  border-top: none;
+  border-right: none;
+}
+
+.onboarding-tooltip .onboarding-title {
+  font-size: 14.5px;
+  margin-bottom: 6px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.onboarding-tooltip .onboarding-body {
+  font-size: 12.5px;
+  text-align: left;
+  line-height: 1.5;
+  color: #cfcfe0;
+  margin-bottom: 12px;
+}
+
+/* Highlight / Spotlight effect on real UI element */
+.onboarding-spotlight-active {
+  position: relative !important;
+  z-index: 1001 !important;
+  box-shadow: 0 0 0 3px var(--accent-color, #e67e22), 0 0 20px rgba(230, 126, 34, 0.6) !important;
+  transition: box-shadow 0.3s ease !important;
+  pointer-events: none !important;
+  transform: none !important;
+}
+
+/* Navigation & Buttons */
+.onboarding-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.onboarding-btn-row {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.onboarding-btn-row.modal-row {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboarding-btn-primary {
+  background: linear-gradient(135deg, var(--accent-color, #e67e22), #f39c12);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 3px 8px rgba(230, 126, 34, 0.3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.onboarding-btn-primary:hover {
+  background: linear-gradient(135deg, var(--accent-hover, #d67118), #e67e22);
+  transform: translateY(-1px);
+}
+
+.onboarding-btn-secondary {
+  background: transparent;
+  color: var(--text-color, #e0e0e0);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.onboarding-btn-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: var(--text-muted, #a0a0b0);
+}
+
+.onboarding-btn-link {
+  background: none;
+  border: none;
+  color: var(--text-muted, #a0a0b0);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 4px 8px;
+  margin: 0 auto;
+}
+
+.onboarding-btn-link:hover {
+  color: #ffffff;
+}
+
+.onboarding-btn-external {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.2s;
+}
+
+.onboarding-btn-external:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+/* Dots step indicator */
+.onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.onboarding-step-counter {
+  font-size: 11px;
+  color: var(--text-muted, #a0a0b0);
+  flex: 1;
+  text-align: left;
+}
+
+.onboarding-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.onboarding-footer-end {
+  flex: 1;
+  text-align: right;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.onboarding-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.2);
+  transition: all 0.25s ease;
+}
+
+.onboarding-dot.active {
+  background-color: var(--accent-color, #e67e22);
+  width: 18px;
+  border-radius: 4px;
+}
+
+/* Tutorial button in Settings */
+.settings-tutorial-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed var(--border-color, rgba(255, 255, 255, 0.2));
+  color: var(--text-color, #e0e0e0);
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.settings-tutorial-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-color, #e67e22);
+  color: #ffffff;
+}

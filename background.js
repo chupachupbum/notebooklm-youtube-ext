@@ -82,14 +82,110 @@ async function openFallbackWindow(tab) {
   fallbackWindowId = win.id;
 }
 
-chrome.windows.onRemoved.addListener((windowId) => {
-  if (windowId === fallbackWindowId) {
+// Helper to extract YouTube video ID from various URL formats
+function extractYouTubeVideoId(url) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./, '');
+    
+    if (hostname === 'youtube.com' || hostname === 'm.youtube.com') {
+      if (parsed.pathname === '/watch') {
+        return parsed.searchParams.get('v') || null;
+      }
+      if (parsed.pathname.startsWith('/shorts/')) {
+        return parsed.pathname.split('/')[2] || null;
+      }
+      if (parsed.pathname.startsWith('/live/')) {
+        return parsed.pathname.split('/')[2] || null;
+      }
+    } else if (hostname === 'youtu.be') {
+      return parsed.pathname.slice(1).split('?')[0] || null;
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Active session tracking across service worker restarts
+let activeSession = {
+  tabId: null,
+  videoUrl: null,
+  videoId: null,
+  hasSource: false,
+  sessionId: null,
+  status: 'idle'
+};
+
+chrome.storage.session.get(['activeSession']).then((data) => {
+  if (data && data.activeSession) {
+    activeSession = Object.assign(activeSession, data.activeSession);
+    console.log('[NLM-BG] Restored activeSession from storage:', activeSession);
+  }
+}).catch(() => {});
+
+async function syncSession() {
+  try {
+    await chrome.storage.session.set({ activeSession });
+  } catch (e) {}
+}
+
+let cleanupPromise = null;
+
+async function performCleanup(reason = 'manual') {
+  console.log(`[NLM-BG] performCleanup triggered. Reason: ${reason}`);
+  if (cleanupPromise) return cleanupPromise;
+
+  cleanupPromise = (async () => {
+    try {
+      // Invalidate current session ID to abort in-flight summarization
+      activeSession.sessionId = null;
+
+      if (activeSession.hasSource) {
+        console.log('[NLM-BG] Active source present in NotebookLM, running cleanup...');
+        await handleDone();
+      } else {
+        console.log('[NLM-BG] No active source to remove.');
+      }
+    } catch (err) {
+      console.warn('[NLM-BG] performCleanup caught error:', err);
+    } finally {
+      activeSession = {
+        tabId: null,
+        videoUrl: null,
+        videoId: null,
+        hasSource: false,
+        sessionId: null,
+        status: 'idle'
+      };
+      await syncSession();
+      cleanupPromise = null;
+      broadcastToSidePanel({ action: 'sessionCleanedUp', reason });
+    }
+  })();
+
+  return cleanupPromise;
+}
+
+// Tab close listener
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  if (tabId === fallbackWindowId) {
     fallbackWindowId = null;
+  }
+  if (tabId === notebookTabId) {
+    notebookTabId = null;
+    try {
+      await chrome.storage.session.remove(['notebookTabId']);
+    } catch (e) {}
+  }
+  // Check if closed tab is our active YouTube video tab
+  if (activeSession.tabId && tabId === activeSession.tabId) {
+    console.log(`[NLM-BG] Active YouTube tab (${tabId}) was closed. Triggering cleanup.`);
+    await performCleanup('tabClosed');
   }
 });
 
-// Enable side panel options if supported by browser
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+// Tab update / navigation listener
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (hasSidePanel && chrome.sidePanel.setOptions && changeInfo.url) {
     if (tab.url?.includes('youtube.com')) {
       chrome.sidePanel.setOptions({
@@ -97,6 +193,34 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         path: 'sidepanel/sidepanel.html',
         enabled: true
       }).catch(() => {});
+    }
+  }
+
+  // Track navigation and cleanup on YouTube tabs
+  const checkUrl = changeInfo.url || (changeInfo.status === 'loading' && tab?.url);
+  if (checkUrl) {
+    const newVideoId = extractYouTubeVideoId(checkUrl);
+
+    if (activeSession.tabId && tabId === activeSession.tabId) {
+      // If the tracked video changed or navigated to a non-video page (e.g. youtube.com homepage)
+      if (newVideoId !== activeSession.videoId) {
+        console.log(`[NLM-BG] Active YouTube tab (${tabId}) navigated away from video ${activeSession.videoId} to ${checkUrl}. Triggering cleanup.`);
+        await performCleanup('navigatedAway');
+        if (newVideoId) {
+          activeSession.tabId = tabId;
+          activeSession.videoId = newVideoId;
+          activeSession.videoUrl = checkUrl;
+          activeSession.status = 'ready';
+          await syncSession();
+        }
+      }
+    } else if (newVideoId && !activeSession.tabId) {
+      // Bind newly opened/activated YouTube video tab so subsequent navigations/close will be tracked
+      activeSession.tabId = tabId;
+      activeSession.videoId = newVideoId;
+      activeSession.videoUrl = checkUrl;
+      activeSession.status = 'ready';
+      await syncSession();
     }
   }
 });
@@ -294,37 +418,96 @@ function withKeepAlive(asyncFn) {
 }
 
 // --- Workflow Functions ---
-const handleSummarize = withKeepAlive(async function({ videoUrl, videoTitle }) {
-  console.log('[NLM-BG] Starting summarization for:', videoUrl);
+const handleSummarize = withKeepAlive(async function({ videoUrl, videoTitle, tabId }) {
+  console.log('[NLM-BG] Starting summarization for:', videoUrl, 'tabId:', tabId);
+  const targetVideoId = extractYouTubeVideoId(videoUrl);
+
+  // If there is an existing session with an active source on another video, clean it up first
+  if (activeSession.hasSource && activeSession.videoId !== targetVideoId) {
+    console.log('[NLM-BG] Cleaning up previous video source before starting new summary...');
+    await performCleanup('newSummaryStarted');
+  }
+
+  // Determine tabId if not provided
+  let targetTabId = tabId;
+  if (!targetTabId) {
+    try {
+      const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (tabs.length > 0 && tabs[0].url && tabs[0].url.includes(targetVideoId)) {
+        targetTabId = tabs[0].id;
+      } else {
+        const ytTabs = await chrome.tabs.query({ url: '*://*.youtube.com/watch*' });
+        const matched = ytTabs.find(t => t.url && t.url.includes(targetVideoId));
+        if (matched) targetTabId = matched.id;
+      }
+    } catch (e) {}
+  }
+
+  const currentSessionId = Date.now().toString();
+  activeSession = {
+    tabId: targetTabId,
+    videoUrl,
+    videoId: targetVideoId,
+    hasSource: false,
+    sessionId: currentSessionId,
+    status: 'working'
+  };
+  await syncSession();
+
+  const isCancelled = () => activeSession.sessionId !== currentSessionId;
+
   const settings = await chrome.storage.local.get(['notebookUrl']);
   const notebookUrl = settings.notebookUrl;
   if (!notebookUrl) {
     throw new Error('No notebook URL configured. Open settings and set your NotebookLM notebook URL.');
   }
 
+  if (isCancelled()) return;
+
   sendProgress('open');
   const tab = await getOrCreateNotebookTab(notebookUrl);
   notebookTabId = tab.id;
   
+  if (isCancelled()) return;
+
   // Ensure the content script is loaded and responsive
   await ensureContentScriptReady(notebookTabId);
+
+  if (isCancelled()) return;
 
   // Clear any existing chat history so generation starts with maximum speed and clean context
   await sendToNotebook({ action: 'clearChat' }).catch(() => {});
 
+  if (isCancelled()) return;
+
   sendProgress('add');
+  activeSession.hasSource = true;
+  await syncSession();
   await sendToNotebook({ action: 'addSource', url: videoUrl });
 
+  if (isCancelled()) return;
+
   sendProgress('ask');
-  const summaryQuestion = `Provide a concise summary of this video in 4-5 bullet points. Focus on the main themes and notable flop examples. Keep it concise.`;
+  const summaryQuestion = `Provide a comprehensive, detailed summary of this video. Thoroughly explain all key themes, core arguments, and important examples in depth without artificial brevity.
+Organize your response using clear markdown headings (such as ## Executive Summary, ## Key Themes, ## Detailed Takeaways) and well-structured bullet points with bold lead-in titles for each point (e.g., * **Theme / Concept**: Detailed explanation). Be thorough, precise, and avoid conversational filler.`;
   const summary = await sendToNotebook({ action: 'askQuestion', question: summaryQuestion });
+
+  if (isCancelled()) return;
 
   // Brief pause to allow NotebookLM UI to complete chip rendering and idle
   await new Promise(r => setTimeout(r, 2000));
 
+  if (isCancelled()) return;
+
   sendProgress('limits');
-  const limitsQuestion = `In 2 brief bullet points, what specific nuance or detail from the video is missed in a text summary?`;
+  const limitsQuestion = `Provide a complete and thorough analysis of what specific nuances, visual demonstrations, tonal subtleties, or practical details from the video are missed or compromised in a text summary.
+Format your response using clear markdown bullet points with bold lead-ins for each limitation (e.g., * **Visual Context**: Detailed explanation). Be thorough and complete.`;
   const limitations = await sendToNotebook({ action: 'askQuestion', question: limitsQuestion });
+
+  if (isCancelled()) return;
+
+  activeSession.status = 'results';
+  await syncSession();
 
   sendProgress('done');
   broadcastToSidePanel({
@@ -349,6 +532,9 @@ const handleDone = withKeepAlive(async function() {
   const tabId = await resolveNotebookTab();
   if (!tabId) {
     console.log('[NLM-BG] No open NotebookLM tab found to clean up.');
+    activeSession.hasSource = false;
+    activeSession.status = 'idle';
+    await syncSession();
     broadcastToSidePanel({ action: 'cleanedUp', success: true });
     return { success: true };
   }
@@ -360,10 +546,16 @@ const handleDone = withKeepAlive(async function() {
       await chrome.storage.session.remove(['notebookTabId']);
     } catch (e) {}
     notebookTabId = null;
+    activeSession.hasSource = false;
+    activeSession.status = 'idle';
+    await syncSession();
     broadcastToSidePanel({ action: 'cleanedUp', success: true });
     return { success: true };
   } catch (e) {
     console.error('[NLM-BG] Error removing source:', e);
+    activeSession.hasSource = false;
+    activeSession.status = 'idle';
+    await syncSession();
     broadcastToSidePanel({ action: 'cleanupError', error: e.message });
     throw e;
   }
@@ -392,8 +584,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'done') {
-    handleDone()
-      .then(res => sendResponse(res))
+    performCleanup('manualDone')
+      .then(() => sendResponse({ success: true }))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true; // Keep message port open for async response
   }

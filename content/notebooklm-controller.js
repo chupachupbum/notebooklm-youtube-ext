@@ -357,13 +357,120 @@
   }
 
   /**
-   * Helper to extract clean answer text by cloning and stripping internal thinking chains.
+   * Extract clean answer markdown by traversing the DOM tree recursively,
+   * preserving headings (h1-h4), paragraphs, lists (ul/ol), bold/italic,
+   * and stripping citation markers and thinking chains.
    */
   function extractMessageText(messageEl) {
     if (!messageEl) return '';
+
+    // 1. Clone to avoid mutating live NotebookLM DOM
     const clone = messageEl.cloneNode(true);
-    clone.querySelectorAll('thinking-chain-view, .thinking-chain, [class*="thinking"], mat-expansion-panel').forEach(el => el.remove());
-    return clone.innerText.trim();
+
+    // 2. Remove non-content elements
+    clone.querySelectorAll(
+      'thinking-chain-view, .thinking-chain, [class*="thinking"], mat-expansion-panel, ' +
+      'citation-marker, .citation-marker, .citation, [data-citation], .citation-chip, ' +
+      'button[aria-label*="citation" i], button[aria-label*="copy" i]'
+    ).forEach(el => el.remove());
+
+    // 3. Recursive walker
+    function walk(node) {
+      if (!node) return '';
+
+      // Text node
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.nodeValue || '';
+      }
+
+      // Element node
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const tag = (node.tagName || '').toLowerCase();
+
+        // Ignore non-visual elements
+        if (tag === 'script' || tag === 'style') return '';
+
+        // Collect children text
+        let childrenText = '';
+        for (let child of (node.childNodes || [])) {
+          childrenText += walk(child);
+        }
+
+        // Custom heading attribute check (e.g. Angular role="heading" or aria-level)
+        if (node.getAttribute && (node.getAttribute('role') === 'heading' || node.hasAttribute('aria-level') || node.hasAttribute('level'))) {
+          const lvl = parseInt(node.getAttribute('aria-level') || node.getAttribute('level') || '2', 10);
+          const prefix = '#'.repeat(Math.min(4, Math.max(1, lvl))) + ' ';
+          return `\n\n${prefix}${childrenText.trim()}\n\n`;
+        }
+
+        switch (tag) {
+          case 'h1':
+            return `\n\n# ${childrenText.trim()}\n\n`;
+          case 'h2':
+            return `\n\n## ${childrenText.trim()}\n\n`;
+          case 'h3':
+            return `\n\n### ${childrenText.trim()}\n\n`;
+          case 'h4':
+            return `\n\n#### ${childrenText.trim()}\n\n`;
+          case 'strong':
+          case 'b': {
+            const trimmed = childrenText.trim();
+            return trimmed ? ` **${trimmed.replace(/^\*+|\*+$/g, '')}** ` : '';
+          }
+          case 'em':
+          case 'i': {
+            const trimmed = childrenText.trim();
+            return trimmed ? ` *${trimmed.replace(/^\*+|\*+$/g, '')}* ` : '';
+          }
+          case 'code': {
+            if (node.closest && node.closest('pre')) return childrenText;
+            return ` \`${childrenText.trim()}\` `;
+          }
+          case 'pre':
+            return `\n\n\`\`\`\n${childrenText.trim()}\n\`\`\`\n\n`;
+          case 'li': {
+            const trimmed = childrenText.trim();
+            if (!trimmed) return '';
+            const parent = node.closest && node.closest('ol');
+            if (parent) {
+              const idx = Array.from(parent.children).indexOf(node) + 1;
+              return `\n${idx}. ${trimmed}\n`;
+            }
+            return `\n* ${trimmed}\n`;
+          }
+          case 'ul':
+          case 'ol':
+            return `\n\n${childrenText.trim()}\n\n`;
+          case 'p':
+          case 'div': {
+            const trimmed = childrenText.trim();
+            if (!trimmed) return '';
+            if (node.closest && node.closest('li')) return trimmed + ' ';
+            return `\n\n${trimmed}\n\n`;
+          }
+          case 'br':
+            return '\n';
+          case 'blockquote':
+            return `\n\n> ${childrenText.trim()}\n\n`;
+          default:
+            return childrenText;
+        }
+      }
+
+      return '';
+    }
+
+    let md = walk(clone);
+
+    // 4. Strip citation brackets and normalize whitespace
+    md = md
+      .replace(/\[\s*\d+(?:\s*[,–-]\s*\d+)*\s*\]/g, '')
+      .replace(/【\s*\d+(?:\s*[,–-]\s*\d+)*\s*】/g, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    return md;
   }
 
   /**
