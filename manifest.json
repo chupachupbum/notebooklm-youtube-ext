@@ -33,6 +33,37 @@
       ],
       "all_frames": false,
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://youtube.com/*"
+      ],
+      "js": [
+        "content/youtube-injector.js"
+      ],
+      "css": [
+        "content/youtube-injector.css"
+      ],
+      "all_frames": false,
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "sidepanel/sidepanel.html",
+        "sidepanel/sidepanel.css",
+        "sidepanel/sidepanel.js",
+        "sidepanel/onboarding.css",
+        "sidepanel/onboarding.js",
+        "lib/markdown.js",
+        "icons/*"
+      ],
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://youtube.com/*"
+      ]
     }
   ],
   "action": {

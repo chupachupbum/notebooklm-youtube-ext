@@ -6,6 +6,12 @@ console.log('[NLM-BG] Service worker initialized.');
 const hasSidePanel = typeof chrome.sidePanel !== 'undefined';
 let fallbackWindowId = null;
 
+chrome.storage.session.get(['fallbackWindowId']).then((data) => {
+  if (data && data.fallbackWindowId) {
+    fallbackWindowId = data.fallbackWindowId;
+  }
+}).catch(() => {});
+
 console.log('[NLM-BG] chrome.sidePanel supported:', hasSidePanel);
 
 // If sidePanel is supported, set default behavior to open on action click
@@ -39,15 +45,28 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // Fallback popup window manager
 async function openFallbackWindow(tab) {
+  if (fallbackWindowId === null) {
+    try {
+      const data = await chrome.storage.session.get(['fallbackWindowId']);
+      if (data && data.fallbackWindowId) {
+        fallbackWindowId = data.fallbackWindowId;
+      }
+    } catch (e) {}
+  }
+
   if (fallbackWindowId !== null) {
     try {
-      const existing = await chrome.windows.get(fallbackWindowId);
+      let existing = true;
+      if (typeof chrome.windows?.get === 'function') {
+        existing = await chrome.windows.get(fallbackWindowId);
+      }
       if (existing) {
         await chrome.windows.update(fallbackWindowId, { focused: true });
         return;
       }
     } catch (e) {
       fallbackWindowId = null;
+      await chrome.storage.session.remove(['fallbackWindowId']).catch(() => {});
     }
   }
 
@@ -67,6 +86,7 @@ async function openFallbackWindow(tab) {
   const queryParams = new URLSearchParams();
   if (tab?.url) queryParams.set('url', tab.url);
   if (tab?.title) queryParams.set('title', tab.title);
+  if (tab?.id) queryParams.set('tabId', tab.id.toString());
 
   const qs = queryParams.toString();
   const panelUrl = chrome.runtime.getURL(`sidepanel/sidepanel.html${qs ? '?' + qs : ''}`);
@@ -80,6 +100,7 @@ async function openFallbackWindow(tab) {
     top: Math.round(top)
   });
   fallbackWindowId = win.id;
+  await chrome.storage.session.set({ fallbackWindowId: win.id }).catch(() => {});
 }
 
 // Helper to extract YouTube video ID from various URL formats
@@ -136,6 +157,7 @@ async function performCleanup(reason = 'manual') {
   if (cleanupPromise) return cleanupPromise;
 
   cleanupPromise = (async () => {
+    let cleanupError = null;
     try {
       // Invalidate current session ID to abort in-flight summarization
       activeSession.sessionId = null;
@@ -148,6 +170,7 @@ async function performCleanup(reason = 'manual') {
       }
     } catch (err) {
       console.warn('[NLM-BG] performCleanup caught error:', err);
+      cleanupError = err;
     } finally {
       activeSession = {
         tabId: null,
@@ -161,6 +184,9 @@ async function performCleanup(reason = 'manual') {
       cleanupPromise = null;
       broadcastToSidePanel({ action: 'sessionCleanedUp', reason });
     }
+    if (cleanupError) {
+      throw cleanupError;
+    }
   })();
 
   return cleanupPromise;
@@ -170,6 +196,7 @@ async function performCleanup(reason = 'manual') {
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (tabId === fallbackWindowId) {
     fallbackWindowId = null;
+    chrome.storage.session.remove(['fallbackWindowId']).catch(() => {});
   }
   if (tabId === notebookTabId) {
     notebookTabId = null;
@@ -180,9 +207,19 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   // Check if closed tab is our active YouTube video tab
   if (activeSession.tabId && tabId === activeSession.tabId) {
     console.log(`[NLM-BG] Active YouTube tab (${tabId}) was closed. Triggering cleanup.`);
-    await performCleanup('tabClosed');
+    await performCleanup('tabClosed').catch(() => {});
   }
 });
+
+// Window close listener (tracks fallback popup window removal)
+if (chrome.windows?.onRemoved) {
+  chrome.windows.onRemoved.addListener((windowId) => {
+    if (windowId === fallbackWindowId) {
+      fallbackWindowId = null;
+      chrome.storage.session.remove(['fallbackWindowId']).catch(() => {});
+    }
+  });
+}
 
 // Tab update / navigation listener
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -205,7 +242,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       // If the tracked video changed or navigated to a non-video page (e.g. youtube.com homepage)
       if (newVideoId !== activeSession.videoId) {
         console.log(`[NLM-BG] Active YouTube tab (${tabId}) navigated away from video ${activeSession.videoId} to ${checkUrl}. Triggering cleanup.`);
-        await performCleanup('navigatedAway');
+        await performCleanup('navigatedAway').catch(() => {});
         if (newVideoId) {
           activeSession.tabId = tabId;
           activeSession.videoId = newVideoId;
@@ -296,8 +333,6 @@ async function getOrCreateNotebookTab(notebookUrl) {
 
 function waitForTabLoad(tabId) {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Tab load timeout')), 30000);
-    
     function listener(id, changeInfo) {
       if (id === tabId && changeInfo.status === 'complete') {
         chrome.tabs.onUpdated.removeListener(listener);
@@ -307,6 +342,11 @@ function waitForTabLoad(tabId) {
         setTimeout(resolve, 3000);
       }
     }
+
+    const timeout = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error('Tab load timeout'));
+    }, 30000);
     
     chrome.tabs.onUpdated.addListener(listener);
   });
@@ -387,7 +427,8 @@ function broadcastToSidePanel(message) {
 async function saveToHistory({ videoUrl, videoTitle, summary, limitations }) {
   console.log('[NLM-BG] Saving summary to history.');
   try {
-    const history = (await chrome.storage.local.get(['summaryHistory'])).summaryHistory || [];
+    let history = (await chrome.storage.local.get(['summaryHistory'])).summaryHistory;
+    if (!Array.isArray(history)) history = [];
     history.unshift({
       videoUrl,
       videoTitle,
@@ -422,10 +463,10 @@ const handleSummarize = withKeepAlive(async function({ videoUrl, videoTitle, tab
   console.log('[NLM-BG] Starting summarization for:', videoUrl, 'tabId:', tabId);
   const targetVideoId = extractYouTubeVideoId(videoUrl);
 
-  // If there is an existing session with an active source on another video, clean it up first
-  if (activeSession.hasSource && activeSession.videoId !== targetVideoId) {
-    console.log('[NLM-BG] Cleaning up previous video source before starting new summary...');
-    await performCleanup('newSummaryStarted');
+  // If there is an existing session with an active source, clean it up first
+  if (activeSession.hasSource) {
+    console.log('[NLM-BG] Cleaning up previous source before starting new summary...');
+    await performCleanup('newSummaryStarted').catch(() => {});
   }
 
   // Determine tabId if not provided
@@ -454,71 +495,77 @@ const handleSummarize = withKeepAlive(async function({ videoUrl, videoTitle, tab
   };
   await syncSession();
 
-  const isCancelled = () => activeSession.sessionId !== currentSessionId;
+  try {
+    const isCancelled = () => activeSession.sessionId !== currentSessionId;
 
-  const settings = await chrome.storage.local.get(['notebookUrl']);
-  const notebookUrl = settings.notebookUrl;
-  if (!notebookUrl) {
-    throw new Error('No notebook URL configured. Open settings and set your NotebookLM notebook URL.');
-  }
+    const settings = await chrome.storage.local.get(['notebookUrl']);
+    const notebookUrl = settings.notebookUrl;
+    if (!notebookUrl) {
+      throw new Error('No notebook URL configured. Open settings and set your NotebookLM notebook URL.');
+    }
 
-  if (isCancelled()) return;
+    if (isCancelled()) return;
 
-  sendProgress('open');
-  const tab = await getOrCreateNotebookTab(notebookUrl);
-  notebookTabId = tab.id;
-  
-  if (isCancelled()) return;
+    sendProgress('open');
+    const tab = await getOrCreateNotebookTab(notebookUrl);
+    notebookTabId = tab.id;
+    
+    if (isCancelled()) return;
 
-  // Ensure the content script is loaded and responsive
-  await ensureContentScriptReady(notebookTabId);
+    // Ensure the content script is loaded and responsive
+    await ensureContentScriptReady(notebookTabId);
 
-  if (isCancelled()) return;
+    if (isCancelled()) return;
 
-  // Clear any existing chat history so generation starts with maximum speed and clean context
-  await sendToNotebook({ action: 'clearChat' }).catch(() => {});
+    // Clear any existing chat history so generation starts with maximum speed and clean context
+    await sendToNotebook({ action: 'clearChat' }).catch(() => {});
 
-  if (isCancelled()) return;
+    if (isCancelled()) return;
 
-  sendProgress('add');
-  activeSession.hasSource = true;
-  await syncSession();
-  await sendToNotebook({ action: 'addSource', url: videoUrl });
+    sendProgress('add');
+    activeSession.hasSource = true;
+    await syncSession();
+    await sendToNotebook({ action: 'addSource', url: videoUrl });
 
-  if (isCancelled()) return;
+    if (isCancelled()) return;
 
-  sendProgress('ask');
-  const summaryQuestion = `Provide a comprehensive, detailed summary of this video. Thoroughly explain all key themes, core arguments, and important examples in depth without artificial brevity.
+    sendProgress('ask');
+    const summaryQuestion = `Provide a comprehensive, detailed summary of this video. Thoroughly explain all key themes, core arguments, and important examples in depth without artificial brevity.
 Organize your response using clear markdown headings (such as ## Executive Summary, ## Key Themes, ## Detailed Takeaways) and well-structured bullet points with bold lead-in titles for each point (e.g., * **Theme / Concept**: Detailed explanation). Be thorough, precise, and avoid conversational filler.`;
-  const summary = await sendToNotebook({ action: 'askQuestion', question: summaryQuestion });
+    const summary = await sendToNotebook({ action: 'askQuestion', question: summaryQuestion });
 
-  if (isCancelled()) return;
+    if (isCancelled()) return;
 
-  // Brief pause to allow NotebookLM UI to complete chip rendering and idle
-  await new Promise(r => setTimeout(r, 2000));
+    // Brief pause to allow NotebookLM UI to complete chip rendering and idle
+    await new Promise(r => setTimeout(r, 2000));
 
-  if (isCancelled()) return;
+    if (isCancelled()) return;
 
-  sendProgress('limits');
-  const limitsQuestion = `Provide a complete and thorough analysis of what specific nuances, visual demonstrations, tonal subtleties, or practical details from the video are missed or compromised in a text summary.
+    sendProgress('limits');
+    const limitsQuestion = `Provide a complete and thorough analysis of what specific nuances, visual demonstrations, tonal subtleties, or practical details from the video are missed or compromised in a text summary.
 Format your response using clear markdown bullet points with bold lead-ins for each limitation (e.g., * **Visual Context**: Detailed explanation). Be thorough and complete.`;
-  const limitations = await sendToNotebook({ action: 'askQuestion', question: limitsQuestion });
+    const limitations = await sendToNotebook({ action: 'askQuestion', question: limitsQuestion });
 
-  if (isCancelled()) return;
+    if (isCancelled()) return;
 
-  activeSession.status = 'results';
-  await syncSession();
+    activeSession.status = 'results';
+    await syncSession();
 
-  sendProgress('done');
-  broadcastToSidePanel({
-    action: 'summary',
-    summary: summary.text,
-    limitations: limitations.text,
-    videoUrl,
-    videoTitle
-  });
+    sendProgress('done');
+    broadcastToSidePanel({
+      action: 'summary',
+      summary: summary.text,
+      limitations: limitations.text,
+      videoUrl,
+      videoTitle
+    });
 
-  await saveToHistory({ videoUrl, videoTitle, summary: summary.text, limitations: limitations.text });
+    await saveToHistory({ videoUrl, videoTitle, summary: summary.text, limitations: limitations.text });
+  } catch (err) {
+    activeSession.status = 'idle';
+    await syncSession().catch(() => {});
+    throw err;
+  }
 });
 
 const handleFollowUp = withKeepAlive(async function({ question }) {
@@ -578,7 +625,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ received: true });
     handleFollowUp(message).catch(err => {
       console.error('[NLM-BG] FollowUp error:', err);
-      broadcastToSidePanel({ action: 'error', message: err.message });
+      broadcastToSidePanel({ action: 'followUpError', message: err.message });
     });
     return false;
   }

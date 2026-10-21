@@ -1,0 +1,25 @@
+{
+  "name": "notebooklm-youtube-ext",
+  "version": "0.1.0",
+  "description": "Summarize YouTube videos using Google NotebookLM without leaving YouTube",
+  "main": "background.js",
+  "scripts": {
+    "test": "node tests/run-all.js",
+    "test:tier1": "node tests/run-all.js --tier=1",
+    "test:tier2": "node tests/run-all.js --tier=2",
+    "test:tier3": "node tests/run-all.js --tier=3",
+    "test:tier4": "node tests/run-all.js --tier=4",
+    "test:m1": "node tests/run-all.js --milestone=1",
+    "test:m2": "node tests/run-all.js --milestone=2",
+    "test:m3": "node tests/run-all.js --milestone=3",
+    "test:m4": "node tests/run-all.js --milestone=4"
+  },
+  "keywords": [
+    "chrome-extension",
+    "notebooklm",
+    "youtube",
+    "summarizer"
+  ],
+  "author": "",
+  "license": "ISC"
+}

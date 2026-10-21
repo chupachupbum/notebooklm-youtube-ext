@@ -37,6 +37,23 @@ if (typeof window.chrome === 'undefined' || !window.chrome.storage || !window.ch
     onUpdated: { addListener: () => {} }
   };
 }
+// Inline Mode Initialization
+function initInlineMode() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const inlineVal = urlParams.get('inline');
+    if (inlineVal === '1' || inlineVal === 'true') {
+      if (document.body && !document.body.classList.contains('is-inline-mode')) {
+        document.body.classList.add('is-inline-mode');
+      }
+    }
+  } catch (e) {
+    console.error('Error initializing inline mode:', e);
+  }
+}
+
+// Execute immediately at script evaluation to prevent FOUC
+initInlineMode();
 
 // State Management
 const states = ['notYoutube', 'ready', 'working', 'results', 'error'];
@@ -71,7 +88,7 @@ const DEFAULT_NOTEBOOK_URL = 'https://notebook.google.com/notebook/fff86f43-6140
 function extractYouTubeVideoId(url) {
   if (!url || typeof url !== 'string') return null;
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(url, 'https://www.youtube.com');
     const hostname = parsed.hostname.replace(/^www\./, '');
     
     if (hostname === 'youtube.com' || hostname === 'm.youtube.com') {
@@ -132,12 +149,19 @@ function saveSettings() {
 // Tab handling logic
 async function checkCurrentTab() {
   try {
-    // 1. Check if video parameters were passed via URL (e.g. from popup window fallback)
+    initInlineMode();
+    // 1. Check if video parameters were passed via URL (e.g. from popup window fallback or inline panel)
     const urlParams = new URLSearchParams(window.location.search);
     const paramUrl = urlParams.get('url');
     const paramTitle = urlParams.get('title');
     const paramTabId = urlParams.get('tabId');
-    if (paramTabId) currentTabId = parseInt(paramTabId, 10);
+    if (paramTabId) {
+      currentTabId = parseInt(paramTabId, 10);
+    } else if (chrome.tabs && chrome.tabs.query) {
+      chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+        if (tab && tab.id) currentTabId = tab.id;
+      }).catch(() => {});
+    }
 
     if (paramUrl) {
       const vid = extractYouTubeVideoId(paramUrl);
@@ -421,6 +445,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === 'error') {
     showState('error');
     document.getElementById('errorMessage').textContent = message.message || 'An unknown error occurred.';
+  } else if (message.action === 'followUpError') {
+    const resultsContainer = document.getElementById('followUpResults');
+    const pendingDiv = resultsContainer ? resultsContainer.querySelector('.pending') : null;
+    if (pendingDiv) {
+      pendingDiv.classList.remove('pending');
+      const answerDiv = pendingDiv.querySelector('.a');
+      if (answerDiv) {
+        answerDiv.textContent = 'Error: ' + (message.message || 'Failed to get answer.');
+      }
+    } else {
+      showToast('Follow-up error: ' + (message.message || 'Failed to get answer.'));
+    }
+    const input = document.getElementById('followUpInput');
+    if (input) {
+      input.disabled = false;
+      if (typeof input.focus === 'function') input.focus();
+    }
+    const btn = document.getElementById('followUpBtn');
+    if (btn) btn.disabled = false;
   } else if (message.action === 'followUpAnswer') {
     const resultsContainer = document.getElementById('followUpResults');
     const pendingDiv = resultsContainer.querySelector('.pending');
@@ -504,6 +547,7 @@ window.checkCurrentTab = checkCurrentTab;
 window.showToast = showToast;
 
 document.addEventListener('DOMContentLoaded', () => {
+  initInlineMode();
   loadSettings();
   attachEventListeners();
   checkCurrentTab();

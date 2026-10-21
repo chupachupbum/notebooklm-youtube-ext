@@ -623,3 +623,177 @@ textarea:focus {
   from { opacity: 1; transform: translate(-50%, 0); }
   to { opacity: 0; transform: translate(-50%, 10px); display: none; }
 }
+
+/* ==========================================================================
+   Inline Mode Overrides (when embedded in YouTube page iframe)
+   Activated via body.is-inline-mode (when URL query inline=1 is present)
+   Preserves 100% backward compatibility for standalone Chrome Side Panel.
+   ========================================================================== */
+
+body.is-inline-mode {
+  height: 100%;
+  min-height: 100%;
+  background-color: var(--bg-color);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-color-light) transparent;
+}
+
+/* 1. Header Adaptation: Suppress duplicate title header, keep settings toggle accessible */
+body.is-inline-mode header {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: transparent;
+  border-bottom: none;
+  padding: 0;
+  z-index: 20;
+}
+
+body.is-inline-mode header h1 {
+  display: none;
+}
+
+body.is-inline-mode #settingsToggle {
+  font-size: 15px;
+  opacity: 0.7;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+body.is-inline-mode #settingsToggle:hover {
+  opacity: 1;
+}
+
+/* 2. Compact Main Layout & Padding */
+body.is-inline-mode main {
+  padding: 12px 14px;
+}
+
+body.is-inline-mode .state-section {
+  gap: 12px;
+}
+
+/* 3. Empty & Error States (compact vertical padding for short viewports) */
+body.is-inline-mode .empty-state,
+body.is-inline-mode .error-state {
+  padding: 24px 16px;
+}
+
+body.is-inline-mode .empty-state .emoji,
+body.is-inline-mode .error-state .emoji {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+/* 4. Video Info Card */
+body.is-inline-mode .video-info {
+  padding: 12px;
+}
+
+body.is-inline-mode .video-info h3 {
+  font-size: 14px;
+}
+
+/* 5. Primary Action Button */
+body.is-inline-mode .primary-btn {
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+/* 6. Loading & Progress Steps */
+body.is-inline-mode .loading {
+  padding: 14px 0 10px;
+}
+
+body.is-inline-mode .spinner {
+  width: 26px;
+  height: 26px;
+  margin-bottom: 8px;
+}
+
+body.is-inline-mode .progress-steps {
+  padding: 12px 14px;
+}
+
+body.is-inline-mode .step {
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+
+/* 7. Results & Content Blocks */
+body.is-inline-mode .result-block {
+  padding: 14px;
+}
+
+body.is-inline-mode .result-block h3 {
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+body.is-inline-mode .content-area,
+body.is-inline-mode .q-and-a .a {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 8. Follow-up Section & Action Bar */
+body.is-inline-mode textarea {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+body.is-inline-mode .action-bar {
+  margin-top: 12px;
+  gap: 8px;
+}
+
+body.is-inline-mode .action-bar button {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* 9. Sleek Embedded Scrollbar */
+body.is-inline-mode::-webkit-scrollbar {
+  width: 6px;
+}
+
+body.is-inline-mode::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body.is-inline-mode::-webkit-scrollbar-thumb {
+  background: var(--bg-color-light);
+  border-radius: 3px;
+}
+
+body.is-inline-mode::-webkit-scrollbar-thumb:hover {
+  background: #3a3a5a;
+}
+
+/* 10. Embedded Onboarding Adaptation (handles short iframe viewports) */
+body.is-inline-mode .onboarding-modal-container {
+  padding: 10px;
+  align-items: flex-start;
+  overflow-y: auto;
+}
+
+body.is-inline-mode .onboarding-modal {
+  padding: 18px 16px;
+  gap: 10px;
+  max-width: 320px;
+  margin: auto;
+}
+
+body.is-inline-mode .onboarding-icon {
+  font-size: 30px;
+}
+
+body.is-inline-mode .onboarding-title {
+  font-size: 15px;
+}
+
+body.is-inline-mode .onboarding-body {
+  font-size: 12.5px;
+}
+

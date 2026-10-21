@@ -129,7 +129,10 @@
 
     if (readyEl && readyEl.classList.contains('hidden')) {
       demoModeActive = true;
-      if (notYoutubeEl) notYoutubeEl.classList.add('hidden');
+      ['notYoutube', 'results', 'working', 'error'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+      });
       readyEl.classList.remove('hidden');
       if (videoTitleEl && (!videoTitleEl.textContent.trim() || videoTitleEl.textContent === 'Video Title')) {
         videoTitleEl.textContent = 'Demo: Exploring Generative AI with NotebookLM';
